@@ -2,20 +2,22 @@
 
 kprobe:ext4_file_write_iter
 {
-  $iocb = (struct kiocb *)arg0;
-  $file = $iocb->ki_filp;
-  $name = str($file->f_path.dentry->d_name.name);
+    $iocb = (struct kiocb *)arg0;
+    $file = $iocb->ki_filp;
+    $name = str($file->f_path.dentry->d_name.name);
 
-  if ($name == "syspro_ext4.txt")
-  {
-    @ts[tid] = nsecs;
-  }
+    // trace file named "syspro_ext4.txt" only
+    if ($name == "syspro_ext4.txt")
+    {
+        @ts[tid] = nsecs;
+    }
 }
 
 kretprobe:ext4_file_write_iter
 {
-  if(@ts[tid]) {
-    @app_latency = hist((nsecs - @ts[tid]) / 1000);
-    delete(@ts[tid]);
-  }
+    if (@ts[tid]) {
+        // measure latency in microsec
+        @app_latency = hist((nsecs - @ts[tid]) / 1000);
+        delete(@ts[tid]);
+    }
 }
