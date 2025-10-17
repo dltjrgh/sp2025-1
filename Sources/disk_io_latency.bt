@@ -1,0 +1,14 @@
+tracepoint:block:block_rq_issue
+{
+  if (comm == "dd") {
+    @ts[args->dev, args->sector] = nsecs;
+  }
+}
+
+tracepoint:block:block_rq_complete
+{
+  if (@ts[args->dev, args->sector]) {
+    @disk_io_latency = hist((nsecs - @ts[args->dev, args->sector]) / 1000);
+    delete(@ts[args->dev, args->sector]);
+  }
+}
