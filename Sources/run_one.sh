@@ -1,5 +1,5 @@
 #!/bin/sh
-# Measure app latency, then disk latency
+# Run one latency experiment
 
 set -eu
 
@@ -10,18 +10,15 @@ LABEL="${LABEL:-run}"
 OUTDIR="${OUTDIR:-out}"
 
 TARGET="syspro_ext4.txt"
-APP_OUT="${OUTDIR}/${LABEL}_app.txt"
-DISK_OUT="${OUTDIR}/${LABEL}_disk.txt"
+OUT="${OUTDIR}/${LABEL}.txt"
 
-echo "[*] ${LABEL}: dirty_ratio=${DIRTY}, bs=${BS}, count=${COUNT}"
+echo "[*] ${LABEL}: dirty=${DIRTY}, bs=${BS}, count=${COUNT}"
 mkdir -p "${OUTDIR}"
-rm -f "${TARGET}" "${APP_OUT}" "${DISK_OUT}"
+rm -f "${TARGET}" "${OUT}"
 
-echo "${DIRTY}" > /proc/sys/vm/dirty_ratio"
+echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
 
-# --- app latency ---
-echo "[+] app_latency.bt"
-bpftrace app_latency.bt > "${APP_OUT}" 2>&1 &
+bpftrace combined_latency.bt > "${OUT}" 2>&1 &
 PID=$!
 sleep 2
 dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
@@ -30,22 +27,8 @@ kill -INT "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 
 echo
-echo "== ${LABEL}: app latency (us) =="
-grep -A20 '@app_latency' "${APP_OUT}" || echo "(no data)"
+echo "== ${LABEL}: results =="
+grep -A20 '@app_latency' "${OUT}" || echo "(no app data)"
+grep -A20 '@disk_io_latency' "${OUT}" || echo "(no disk data)"
 echo
 
-# --- disk latency ---
-echo "[+] disk_io_latency.bt"
-rm -f "${TARGET}"
-bpftrace disk_io_latency.bt > "${DISK_OUT}" 2>&1 &
-PID=$!
-sleep 3
-dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
-sync
-kill -INT "$PID" 2>/dev/null || true
-wait "$PID" 2>/dev/null || true
-
-echo
-echo "== ${LABEL}: disk latency (us) =="
-grep -A20 '@disk_io_latency' "${DISK_OUT}" || echo "(no data)"
-echo
