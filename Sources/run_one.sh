@@ -1,5 +1,5 @@
 #!/bin/sh
-# Measure app latency first, then disk latency
+# Sequential measurement of app & disk latency
 
 set -eu
 
@@ -19,14 +19,16 @@ rm -f "${TARGET}" "${APP_OUT}" "${DISK_OUT}"
 
 echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
 
-# ---- Phase 1: app latency ----
+# --- Phase 1: app latency ---
 echo "[+] app_latency.bt"
-bpftrace app_latency.bt > "${APP_OUT}" &
-PID=$!
-sleep 2
+(bpftrace app_latency.bt > "${APP_OUT}" 2>&1 & echo $! > .pid) &
+PID=$(cat .pid)
+# wait until attached
+while ! grep -q "Attaching" "${APP_OUT}" 2>/dev/null; do sleep 0.1; done
+sleep 1
 dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
 sync
-sleep 2
+sleep 1
 kill -INT "${PID}" 2>/dev/null || true
 wait "${PID}" 2>/dev/null || true
 
@@ -35,18 +37,17 @@ echo "== ${LABEL}: app latency (us) =="
 grep -A20 '@app_latency' "${APP_OUT}" || echo "(no data)"
 echo
 
-# small delay to ensure clean detaching
-sleep 2
-
-# ---- Phase 2: disk latency ----
+# --- Phase 2: disk latency ---
 echo "[+] disk_io_latency.bt"
 rm -f "${TARGET}"
-bpftrace disk_io_latency.bt > "${DISK_OUT}" &
-PID=$!
-sleep 3
+(bpftrace disk_io_latency.bt > "${DISK_OUT}" 2>&1 & echo $! > .pid) &
+PID=$(cat .pid)
+# wait until attach message appears
+while ! grep -q "Attaching" "${DISK_OUT}" 2>/dev/null; do sleep 0.1; done
+sleep 1
 dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
 sync
-sleep 3
+sleep 1
 kill -INT "${PID}" 2>/dev/null || true
 wait "${PID}" 2>/dev/null || true
 
