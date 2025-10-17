@@ -1,6 +1,4 @@
 #!/bin/sh
-# Run one latency experiment using combined_latency.bt
-
 set -eu
 
 DIRTY="${1:-10}"
@@ -16,17 +14,20 @@ rm -f "${TARGET}" "${OUT}"
 
 echo "[*] ${LABEL}: dirty=${DIRTY}, bs=${BS}, count=${COUNT}"
 
-# Start tracing
+# Start bpftrace in background
 bpftrace combined_latency.bt > "${OUT}" 2>&1 &
 PID=$!
-sleep 2
+
+# Wait until tracing is fully attached
+until grep -q "Attaching" "${OUT}" 2>/dev/null; do sleep 0.2; done
+sleep 1  # ensure attach complete
 
 # Run workload
 echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
 dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
 sync
 
-# Stop tracing
+# Stop tracing and wait
 kill -INT "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 
