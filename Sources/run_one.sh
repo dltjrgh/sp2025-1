@@ -1,12 +1,8 @@
 #!/bin/sh
-# Run experiment with given parameters:
-#   DIRTY=<int> BS=<blocksize> COUNT=<count> LABEL=<name> OUTDIR=<dir>
-# Example:
-#   DIRTY=10 BS=1M COUNT=512 LABEL=Q1-1-r10 OUTDIR=out-2025... ./run_one.sh
+# Run one experiment with given params
 
 set -eu
 
-# ---- read params (with defaults for safety) ----
 DIRTY="${DIRTY:-10}"
 BS="${BS:-1M}"
 COUNT="${COUNT:-512}"
@@ -17,36 +13,36 @@ TARGET="syspro_ext4.txt"
 APP_OUT="${OUTDIR}/${LABEL}_app.txt"
 DISK_OUT="${OUTDIR}/${LABEL}_disk.txt"
 
-echo "[*] Run '${LABEL}': dirty_ratio=${DIRTY}, bs=${BS}, count=${COUNT}"
+echo "[*] Run ${LABEL}: dirty_ratio=${DIRTY}, bs=${BS}, count=${COUNT}"
 
-# 1) prepare output dir
 mkdir -p "${OUTDIR}"
 rm -f "${TARGET}" "${APP_OUT}" "${DISK_OUT}"
 
-# 2) set vm.dirty_ratio
 echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
 
-# 3) start both bpftrace scripts in background
-bpftrace app_latency.bt > "${APP_OUT}" &
+echo "[+] Start bpftrace"
+stdbuf -oL bpftrace app_latency.bt > "${APP_OUT}" &
 PID_APP=$!
-bpftrace disk_io_latency.bt > "${DISK_OUT}" &
+stdbuf -oL bpftrace disk_io_latency.bt > "${DISK_OUT}" &
 PID_DISK=$!
 
-sleep 1
+sleep 3
 
-# 4) generate workload
-echo "[*] dd if=/dev/zero of=${TARGET} bs=${BS} count=${COUNT}"
+echo "[+] Run workload"
 dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
 sync
+sleep 3
 
-# 5) stop bpftrace (SIGINT)
-kill -INT "${PID_APP}" "${PID_DISK}" 2>/dev/null || true
+echo "[+] Stop bpftrace"
+kill -INT "$PID_APP" "$PID_DISK" 2>/dev/null || true
+sleep 2
+wait "$PID_APP" "$PID_DISK" 2>/dev/null || true
 
-sleep 1
-
-echo "---- ${LABEL}: app latency (μs) ----"
-grep -A20 '@app_latency' "${APP_OUT}" || true
-echo "---- ${LABEL}: disk latency (μs) ----"
-grep -A20 '@disk_io_latency' "${DISK_OUT}" || true
+echo
+echo "== ${LABEL}: App latency (us) =="
+grep -A20 '@app_latency' "$APP_OUT" || echo "(no data)"
+echo
+echo "== ${LABEL}: Disk latency (us) =="
+grep -A20 '@disk_io_latency' "$DISK_OUT" || echo "(no data)"
 echo
 
