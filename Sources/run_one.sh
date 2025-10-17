@@ -27,9 +27,9 @@ rm -f "${TARGET}" "${APP_OUT}" "${DISK_OUT}"
 echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
 
 # 3) start both bpftrace scripts in background
-bpftrace app_latency.bt > "${APP_OUT}" &
+BPFTRACE_BTF=/sys/kernel/btf/vmlinux bpftrace app_latency.bt > "${APP_OUT}" &
 PID_APP=$!
-bpftrace disk_io_latency.bt > "${DISK_OUT}" &
+BPFTRACE_BTF=/sys/kernel/btf/vmlinux bpftrace disk_io_latency.bt > "${DISK_OUT}" &
 PID_DISK=$!
 
 sleep 1
