@@ -1,31 +1,23 @@
-#!/bin/bash
+#!/bin/sh
+# Run all latency experiments (Q1-1, Q1-2)
 
-# This script orchestrates the series of experiments to measure latency.
-# It calls run_one.sh for each parameter combination.
+set -eu
 
-# Ensure the helper script is executable
-chmod +x run_one.sh
+TS="$(date +%Y%m%d-%H%M%S)"
+OUTDIR="out-${TS}"
+mkdir -p "${OUTDIR}"
 
-echo "============================================================"
-echo "               STARTING LATENCY MEASUREMENT                 "
-echo "============================================================"
+echo "[*] Output directory: ${OUTDIR}"
 
-# --- Q1-1: Varying dirty_ratio ---
-echo ""
-echo "Part A: Varying dirty_ratio (bs=1M, count=512)"
-./run_one.sh 10 1M 512
-./run_one.sh 5 1M 512
-./run_one.sh 1 1M 512
+# Q1-1: varying dirty_ratio
+for D in 10 5 1; do
+  ./run_one.sh "$D" 1M 512
+done
 
-
-# --- Q1-2: Varying (bs, count) ---
-echo ""
-echo "Part B: Varying Block Size and Count (dirty_ratio=5)"
+# Q1-2: varying (bs, count) with dirty_ratio=5
 ./run_one.sh 5 4k 131072
 ./run_one.sh 5 1M 512
 ./run_one.sh 5 64M 8
 
-echo "============================================================"
-echo "                  ALL EXPERIMENTS COMPLETE                  "
-echo "============================================================"
-
+echo "[*] All experiments completed."
+echo "[*] Results saved in ${OUTDIR}/"

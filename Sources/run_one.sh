@@ -1,62 +1,36 @@
-#!/bin/bash
+#!/bin/sh
+set -eu
 
-# This script runs a single dd experiment while tracing with bpftrace.
-# It requires elevated privileges to run bpftrace and modify sysctl vm values.
+DIRTY="${1:-10}"
+BS="${2:-1M}"
+COUNT="${3:-512}"
+LABEL="r${DIRTY}_${BS}_${COUNT}"
+OUTDIR="${OUTDIR:-out}"
+OUT="${OUTDIR}/${LABEL}.txt"
+TARGET="syspro_ext4.txt"
 
-# Check if the correct number of arguments are provided
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <dirty_ratio> <bs> <count>"
-    exit 1
-fi
+mkdir -p "${OUTDIR}"
+rm -f "${TARGET}" "${OUT}"
 
-# Assign arguments to variables
-DIRTY_RATIO=$1
-BS=$2
-COUNT=$3
-TARGET_FILE="syspro_ext4.txt"
-BPF_SCRIPT="combined_latency.bt"
-OUTPUT_FILE="results_dirty${DIRTY_RATIO}_bs${BS}_count${COUNT}.txt"
+echo "[*] ${LABEL}: dirty=${DIRTY}, bs=${BS}, count=${COUNT}"
 
-# --- Start of Experiment ---
-echo "------------------------------------------------------------"
-echo "Starting experiment: dirty_ratio=${DIRTY_RATIO}, bs=${BS}, count=${COUNT}"
-echo "------------------------------------------------------------"
+# Start bpftrace in background
+bpftrace combined_latency.bt > "${OUT}" 2>&1 &
+PID=$!
 
-# 1. Set the dirty_ratio
-echo "Setting dirty_ratio to ${DIRTY_RATIO}..."
-echo ${DIRTY_RATIO} | sudo tee /proc/sys/vm/dirty_ratio > /dev/null
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to set dirty_ratio. Are you running with sudo?"
-    exit 1
-fi
+# Wait until tracing is fully attached
+until grep -q "Attaching" "${OUT}" 2>/dev/null; do sleep 0.2; done
+sleep 1  # ensure attach complete
 
-# 2. Start bpftrace in the background
-echo "Starting bpftrace..."
-sudo bpftrace ${BPF_SCRIPT} > ${OUTPUT_FILE} &
-BPF_PID=$!
-
-# Give bpftrace a moment to start up properly
-sleep 2
-
-# 3. Run the dd command to generate I/O
-echo "Running dd if=/dev/zero of=${TARGET_FILE} bs=${BS} count=${COUNT}..."
-dd if=/dev/zero of=${TARGET_FILE} bs=${BS} count=${COUNT} conv=fdatasync &> /dev/null
-
-# 4. Ensure all cached data is written to disk
-echo "Syncing filesystem..."
+# Run workload
+echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
+dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
 sync
 
-# Allow a few seconds for bpftrace to capture completion events
-sleep 5
+# Stop tracing and wait
+kill -INT "$PID" 2>/dev/null || true
+wait "$PID" 2>/dev/null || true
 
-# 5. Stop the bpftrace process gracefully
-echo "Stopping bpftrace (PID: ${BPF_PID})..."
-sudo kill -SIGINT ${BPF_PID}
-wait ${BPF_PID} 2>/dev/null
-
-# 6. Clean up the large file created by dd
-echo "Cleaning up ${TARGET_FILE}..."
-rm -f ${TARGET_FILE}
-
-echo "Experiment finished. Results saved to ${OUTPUT_FILE}"
-echo ""
+echo "[+] Saved: ${OUT}"
+grep -A20 '@app_latency' "${OUT}" || echo "(no app data)"
+grep -A20 '@disk_io_latency' "${OUT}" || echo "(no disk data)"
