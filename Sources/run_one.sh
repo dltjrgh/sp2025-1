@@ -14,13 +14,12 @@ APP_OUT="${OUTDIR}/${LABEL}_app.txt"
 DISK_OUT="${OUTDIR}/${LABEL}_disk.txt"
 
 echo "[*] ${LABEL}: dirty_ratio=${DIRTY}, bs=${BS}, count=${COUNT}"
-
 mkdir -p "${OUTDIR}"
 rm -f "${TARGET}" "${APP_OUT}" "${DISK_OUT}"
 
 echo "${DIRTY}" > /proc/sys/vm/dirty_ratio
 
-# app latency
+# ---- Phase 1: app latency ----
 echo "[+] app_latency.bt"
 bpftrace app_latency.bt > "${APP_OUT}" &
 PID=$!
@@ -36,15 +35,18 @@ echo "== ${LABEL}: app latency (us) =="
 grep -A20 '@app_latency' "${APP_OUT}" || echo "(no data)"
 echo
 
-# disk latency
+# small delay to ensure clean detaching
+sleep 2
+
+# ---- Phase 2: disk latency ----
 echo "[+] disk_io_latency.bt"
 rm -f "${TARGET}"
 bpftrace disk_io_latency.bt > "${DISK_OUT}" &
 PID=$!
-sleep 2
+sleep 3
 dd if=/dev/zero of="${TARGET}" bs="${BS}" count="${COUNT}" status=none
 sync
-sleep 2
+sleep 3
 kill -INT "${PID}" 2>/dev/null || true
 wait "${PID}" 2>/dev/null || true
 
