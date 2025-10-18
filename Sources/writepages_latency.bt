@@ -1,0 +1,16 @@
+kprobe:ext4_writepages
+{
+	if (comm == "dd" || strncmp(comm, "kworker/", 7) == 0 || strncmp(comm, "jbd2/", 5) == 0) {
+		@ts[tid] = nsecs;
+	}
+}
+
+kretprobe:ext4_writepages
+{
+	if (@ts[tid]) {
+		// measure latency in microsec
+		@writepages_latency = hist((nsecs - @ts[tid]) / 1000);
+		delete(@ts[tid]);
+	}
+}
+
